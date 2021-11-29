@@ -1,0 +1,19 @@
+receivers:
+  jaeger:
+    protocols:
+      grpc:
+  otlp:
+    protocols:
+      grpc:      
+
+exporters:
+  otlp:
+    endpoint: data-prepper:21890
+    insecure: true
+  logging:
+
+service:
+  pipelines:
+    traces:
+      receivers: [jaeger,otlp]
+      exporters: [logging, otlp]

@@ -1,0 +1,36 @@
+receivers:
+  jaeger:
+    protocols:
+      grpc:
+      thrift_http:
+      thrift_compact:      
+  otlp:
+    protocols:
+      grpc:
+      http:      
+
+exporters:
+  otlp:
+    endpoint: "otel-collector:4317"
+    insecure: true
+    sending_queue:
+      num_consumers: 4
+      queue_size: 100
+    retry_on_failure:
+      enabled: true
+
+processors:
+  batch:
+  memory_limiter:
+    # 80% of maximum memory up to 2G
+    limit_mib: 80
+    # 25% of limit up to 2G
+    #spike_limit_mib: 100
+    check_interval: 5s
+
+service:
+  pipelines:
+    traces:
+      receivers: [jaeger,otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp]

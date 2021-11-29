@@ -1,0 +1,102 @@
+version: "3.9"
+services:
+  data-prepper:
+    restart: unless-stopped
+    container_name: data-prepper
+    image: opensearchproject/data-prepper:latest
+    environment:
+      - "JAVA_OPTS=-Xms256m -Xmx256m"
+    volumes:
+      - ./trace_analytics_no_ssl.yml:/usr/share/data-prepper/pipelines.yaml
+      - ./data-prepper-config.yaml:/usr/share/data-prepper/data-prepper-config.yaml
+      - ./root-ca.pem:/usr/share/data-prepper/root-ca.pem
+    ports:
+      - "21890:21890"
+    networks:
+      - open_telemetry
+    depends_on:
+      - "opensearch"
+    mem_limit: 600m  
+  
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector:latest
+    command: [ "--config=/etc/otel-collector-config.yml" ]
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel-collector-config.yml      
+    ports:
+      - "14250:14250"
+    depends_on:
+      - data-prepper
+    networks:
+      - open_telemetry
+    mem_limit: 100m  
+
+  otel-agent:
+    container_name: otel-agent
+    image: otel/opentelemetry-collector:latest
+    command: [ "--config=/etc/otel-agent-config.yml" ]
+    working_dir: "/project"
+    volumes:
+      - ./otel-agent-config.yml:/etc/otel-agent-config.yml      
+    depends_on:
+      - data-prepper
+    networks:
+      - open_telemetry
+    mem_limit: 300m      
+  
+  jaeger-hot-rod:
+    image: jaegertracing/example-hotrod:latest
+    command: [ "all" ]
+    environment:
+      - JAEGER_AGENT_HOST=otel-agent
+      - JAEGER_AGENT_PORT=6831
+    ports:
+      - "8080-8083:8080-8083"
+    depends_on:
+      - otel-agent
+    networks:
+      - open_telemetry
+  
+  opensearch:
+    container_name: node-0.example.com
+    image: opensearchproject/opensearch:latest
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true # along with the memlock settings below, disables swapping
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
+        hard: 65536
+    ports:
+      - 9200:9200
+      - 9600:9600 # required for Performance Analyzer
+    volumes:
+      - datavolume01:/usr/share/opensearch/data
+    networks:
+      - open_telemetry
+    mem_limit: 1gb
+  
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:latest
+    container_name: opensearch-dashboards
+    ports:
+      - 5601:5601
+    expose:
+      - "5601"
+    environment:
+      OPENSEARCH_HOSTS: '["https://opensearch:9200"]'
+    depends_on:
+      - opensearch
+    networks:
+      - open_telemetry
+
+networks:
+  open_telemetry:
+
+volumes:
+  datavolume01: {}    
